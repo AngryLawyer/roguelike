@@ -93,6 +93,13 @@ impl Tile {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PlayerAction {
+    TookTurn,
+    DidntTakeTurn,
+    Exit,
+}
+
 type Map = Vec<Vec<Tile>>;
 
 fn place_objects(room: Rect, objects: &mut Vec<Object>) {
@@ -142,7 +149,8 @@ fn make_map(objects: &mut Vec<Object>) -> (Map, (i32, i32)) {
             rooms.push(new_room);
         }
     }
-    let player = Object::new(starting_position.0, starting_position.1, '@', "Player", colors::WHITE, true);
+    let mut player = Object::new(starting_position.0, starting_position.1, '@', "Player", colors::WHITE, true);
+    player.alive = true;
     objects.insert(PLAYER, player);
     (map, starting_position)
 }
@@ -242,33 +250,51 @@ fn main() {
         for object in &objects {
             object.clear(&mut con);
         }
-        let mut player = &mut objects[PLAYER];
-        previous_player_position = player.pos();
-        let exit = handle_keys(&mut root, &mut player, &map);
-        if exit {
+        {
+          let mut player = &mut objects[PLAYER];
+          previous_player_position = player.pos();
+        }
+        let player_action = handle_keys(&mut root, &map, &mut objects);
+        if player_action == PlayerAction::Exit {
             break;
         }
     }
 }
 
-fn handle_keys(root: &mut Root, map: &Map) -> bool {
+fn handle_keys(root: &mut Root, map: &Map, objects: &mut [Object]) -> PlayerAction {
     use tcod::input::Key;
     use tcod::input::KeyCode::*;
+    use PlayerAction::*;
 
-    let mut exit = false;
-    match root.wait_for_keypress(true) {
-        Key { code: Enter, alt: true, .. } => {
+    let player_alive = objects[PLAYER].alive;
+
+    match (root.wait_for_keypress(true), player_alive) {
+        (Key { code: Enter, alt: true, .. }, _) => {
             let fullscreen = root.is_fullscreen();
             root.set_fullscreen(!fullscreen);
+            DidntTakeTurn
         },
-        Key { code: Escape, .. } => exit = true,
-        Key { code: Up, .. } => player.move_by(0, -1, map),
-        Key { code: Down, .. } => player.move_by(0, 1, map),
-        Key { code: Left, .. } => player.move_by(-1, 0, map),
-        Key { code: Right, .. } => player.move_by(1, 0, map),
-        _ => {},
-    };
-    exit
+        (Key { code: Escape, .. }, _) => {
+            Exit
+        },
+        (Key { code: Up, .. }, true) => {
+          move_by(PLAYER, 0, -1, map, objects);
+          TookTurn
+        },
+        (Key { code: Down, .. }, true) => {
+          move_by(PLAYER, 0, 1, map, objects);
+          TookTurn
+        },
+        (Key { code: Left, .. }, true) => {
+          move_by(PLAYER, -1, 0, map, objects);
+          TookTurn
+        },
+        (Key { code: Right, .. }, true) => {
+          move_by(PLAYER, 1, 0, map, objects);
+          TookTurn
+        },
+        _ => DidntTakeTurn,
+    }
 }
 
 fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object], map: &mut Map, fov_map: &mut FovMap, fov_recompute: bool) {
